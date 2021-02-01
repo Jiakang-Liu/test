@@ -65,14 +65,44 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if((which_dev = devintr()) != 0){
-    // ok
-  } else {
-    printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
-    printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
-    p->killed = 1;
   }
-
+  else if((which_dev = devintr()) != 0){
+    // ok
+  }
+  else if(r_scause() == 13 || r_scause() == 15 )
+  {
+      if(r_stval() >= p->sz)
+      {
+          printf("Virtual Address above SZ!\n");
+          p->killed = 1;
+          goto end;
+        }
+      if(r_stval() < p->tf->sp)
+      {
+          printf("Accessn guard page is invalid.\n");
+          p->killed = 1;
+          goto end;
+         }
+      uint32 vm = PGROUNDDOWN(r_stval());
+      char *pa = kalloc();
+      if(pa == 0)
+      {
+          p->killed = 1;
+          goto end;
+       }
+      memset(pa, 0, PGSIZE);
+      if (mappages(p->pagetable, vm, PGSIZE, (uint64)pa, PTE_W|PTE_R|PTE_X|PTE_U) != 0) {
+            kfree(pa);
+            p->killed = 1;
+            goto end;
+          }
+    }
+  else {
+       printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+       printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+       p->killed = 1;
+  }
+end:
   if(p->killed)
     exit(-1);
 
